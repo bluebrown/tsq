@@ -16,8 +16,12 @@ void init_tsq(tsq_t *tsq)
 
 int write_to_fifo(tsq_t *tsq, FIFO_TYPE value)
 {
+    if (tsq->sig_stop)
+        // cannot write to closed fifo
+        return -1;
     node_t *new_node = malloc(sizeof(node_t));
     if (new_node == NULL)
+        // cannot allocate more memory
         return -1;
     new_node->val = value;
     new_node->nxt = NULL;
@@ -47,6 +51,7 @@ int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result)
     {
         pthread_cond_signal(&tsq->ready);
         pthread_mutex_unlock(&tsq->mutex);
+        // fifo is closed and no more data to read
         return -1;
     }
     shifted = tsq->fifo->head;

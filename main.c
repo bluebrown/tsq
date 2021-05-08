@@ -4,6 +4,12 @@
 void *produce(void *arg);
 void *consume(void *arg);
 
+typedef struct thread_arg
+{
+    tsq_t *tsq;
+    char *task;
+} thread_arg_t;
+
 int main(int argc, char const *argv[])
 {
     tsq_t tsq;
@@ -11,13 +17,12 @@ int main(int argc, char const *argv[])
 
     pthread_t consumer1, consumer2, consumer3, producer1, producer2;
 
-    pthread_create(&consumer1, NULL, consume, &tsq);
-    pthread_create(&consumer2, NULL, consume, &tsq);
-    pthread_create(&consumer3, NULL, consume, &tsq);
-    sleep(2);
+    pthread_create(&consumer1, NULL, consume, &(thread_arg_t){&tsq, "consumer 1"});
+    pthread_create(&consumer2, NULL, consume, &(thread_arg_t){&tsq, "consumer 2"});
+    pthread_create(&consumer3, NULL, consume, &(thread_arg_t){&tsq, "consumer 3"});
+    pthread_create(&producer1, NULL, produce, &(thread_arg_t){&tsq, "producer 1"});
+    pthread_create(&producer2, NULL, produce, &(thread_arg_t){&tsq, "producer 2"});
 
-    pthread_create(&producer1, NULL, produce, &tsq);
-    pthread_create(&producer2, NULL, produce, &tsq);
     pthread_join(producer1, NULL);
     pthread_join(producer2, NULL);
     printf("producer threads returned\n");
@@ -35,32 +40,36 @@ int main(int argc, char const *argv[])
 
 void *produce(void *arg)
 {
-    printf("start producer\n");
-    tsq_t *tsq = (tsq_t *)arg;
+    thread_arg_t *ta = (thread_arg_t *)arg;
+    tsq_t *tsq = ta->tsq;
+    char *task = ta->task;
     int i = 1;
+    printf("[%s] start\n", task);
     for (int i = 1; i < 4; i++)
     {
+        // returns -1 on error or closed fifo
         if (write_to_fifo(tsq, i) == -1)
             return NULL;
     }
-    printf("producer done\n");
+    printf("[%s] done\n", task);
     return NULL;
 }
 
 void *consume(void *arg)
 {
-    printf("start consumer\n");
-    tsq_t *tsq = (tsq_t *)arg;
-    int result;
-    while (1)
+    thread_arg_t *ta = (thread_arg_t *)arg;
+    tsq_t *tsq = ta->tsq;
+    char *task = ta->task;
+    int result, ok;
+    printf("[%s] start\n", task);
+    while (ok != -1)
     {
-        if (read_from_fifo(tsq, &result) == -1)
-        {
-            printf("consumer stopped, fifo is closed\n");
-            return NULL;
-        }
-        // mock heavy computation
+        // returns -1 if fifo is closed and
+        // no values more to read
+        ok = read_from_fifo(tsq, &result);
         sleep(2);
-        printf("value received: %i\n", result);
+        printf("[%s] value received: %i\n", task, result);
     }
+    printf("[%s] done, fifo closed\n", task);
+    return NULL;
 }

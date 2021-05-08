@@ -1,75 +1,158 @@
-#include <stdio.h>
 #include "tsq/tsq.h"
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <string.h>
 
-void *produce(void *arg);
-void *consume(void *arg);
+#define BACKLOG 10
+#define PORT 8080
+
+void *listener_func(void *arg);
+void *sender_func(void *arg);
+void *receiver_func(void *arg);
 
 typedef struct thread_arg
 {
-    tsq_t *tsq;
+    tsq_t *q_recv;
+    tsq_t *q_send;
+    int socket;
+    struct sockaddr_in addr;
     char *task;
 } thread_arg_t;
 
 int main(int argc, char const *argv[])
 {
-    tsq_t tsq;
-    tsq_init_struct(&tsq);
+    tsq_t q_recv, q_send;
+    tsq_init_struct(&q_recv);
+    tsq_init_struct(&q_send);
 
-    pthread_t consumer1, consumer2, consumer3, producer1, producer2;
+    int sockfd, new_fd, sin_size;
+    struct sockaddr_in server, client;
 
-    pthread_create(&consumer1, NULL, consume, &(thread_arg_t){&tsq, "consumer 1"});
-    pthread_create(&consumer2, NULL, consume, &(thread_arg_t){&tsq, "consumer 2"});
-    pthread_create(&consumer3, NULL, consume, &(thread_arg_t){&tsq, "consumer 3"});
-    pthread_create(&producer1, NULL, produce, &(thread_arg_t){&tsq, "producer 1"});
-    pthread_create(&producer2, NULL, produce, &(thread_arg_t){&tsq, "producer 2"});
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = INADDR_ANY;
+    server.sin_port = htons(PORT);
 
-    pthread_join(producer1, NULL);
-    pthread_join(producer2, NULL);
-    printf("producer threads returned\n");
+    if ((sockfd = socket(server.sin_family, SOCK_STREAM, 0)) == -1)
+    {
+        perror("socket");
+        return 2;
+    }
 
-    printf("close queue\n");
-    tsq_close(&tsq);
+    pthread_t listener, receiver, sender;
 
-    pthread_join(consumer1, NULL);
-    pthread_join(consumer2, NULL);
-    pthread_join(consumer3, NULL);
-    printf("consumer threads returned\n");
+    pthread_create(&listener, NULL, listener_func, &(thread_arg_t){&q_recv, &q_send, sockfd, server, "listener"});
+    pthread_create(&receiver, NULL, receiver_func, &(thread_arg_t){&q_recv, &q_send, sockfd, server, "receiver"});
+    pthread_create(&sender, NULL, sender_func, &(thread_arg_t){&q_recv, &q_send, sockfd, server, "sender"});
+
+    pthread_join(listener, NULL);
 
     return 0;
 }
 
-void *produce(void *arg)
+void *listener_func(void *arg)
 {
     thread_arg_t *ta = (thread_arg_t *)arg;
-    tsq_t *tsq = ta->tsq;
+    tsq_t *q_recv = ta->q_recv;
+    tsq_t *q_send = ta->q_send;
     char *task = ta->task;
-    int i = 1;
-    printf("[%s] start\n", task);
-    for (int i = 1; i < 4; i++)
+    int sockfd = ta->socket;
+    struct sockaddr_in server = ta->addr;
+    struct sockaddr_in client;
+    int new_fd, sin_size;
+
+    if (bind(sockfd, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
-        // returns -1 on error or closed queue
-        if (tsq_enqueue(tsq, i) == -1)
-            return NULL;
+        perror("bind");
+        return NULL;
     }
-    printf("[%s] done\n", task);
-    return NULL;
+    if (listen(sockfd, BACKLOG) == -1)
+    {
+        perror("listen");
+        return NULL;
+    }
+
+    while (1)
+    {
+        sin_size = sizeof client;
+        new_fd = accept(sockfd, (struct sockaddr *)&client, &sin_size);
+        if (new_fd == -1)
+        {
+            perror("accept");
+            continue;
+        }
+        printf("new socket connected: %i\n", new_fd);
+        tsq_enqueue(q_recv, new_fd);
+    }
 }
 
-void *consume(void *arg)
+void *receiver_func(void *arg)
 {
     thread_arg_t *ta = (thread_arg_t *)arg;
-    tsq_t *tsq = ta->tsq;
+    tsq_t *q_recv = ta->q_recv;
+    tsq_t *q_send = ta->q_send;
     char *task = ta->task;
-    int result, ok;
-    printf("[%s] start\n", task);
-    while (ok != -1)
+    int sockfd = ta->socket;
+    int client_sockfd, read_size;
+    int pageSize = getpagesize();
+    char buffer[pageSize];
+    char *pBuf;
+    int bytesLeft;
+    int msg_end;
+
+    while (1)
     {
-        // returns -1 if queue is closed and
-        // no values more to read
-        ok = tsq_dequeue(tsq, &result);
-        sleep(2);
-        printf("[%s] value received: %i\n", task, result);
+        tsq_dequeue(q_recv, &client_sockfd);
+        printf("[%s] reading from client %i\n", task, client_sockfd);
+        memset(buffer, 0, sizeof(buffer));
+
+        pBuf = buffer;
+        bytesLeft = sizeof(buffer) - sizeof(char);
+        msg_end = 0;
+
+        while (bytesLeft > 0 && msg_end != 1)
+        {
+            int bytes_read = read(client_sockfd, pBuf, bytesLeft);
+            if (bytes_read == 0)
+            {
+                printf("[%s] EOF from socket %i\n", task, client_sockfd);
+                break;
+            }
+            if (bytes_read == -1)
+            {
+                printf("[%s]recv failed from socket %i\n", task, client_sockfd);
+                break;
+            }
+            bytesLeft -= bytes_read;
+            if (strstr(pBuf, "\r") != NULL)
+            {
+                printf("[%s] end of head\n%s", task, pBuf);
+                // msg_end = 1;
+                tsq_enqueue(q_send, client_sockfd);
+                memset(buffer, 0, sizeof(buffer));
+            }
+        }
+        if (msg_end == 1)
+            tsq_enqueue(q_send, client_sockfd);
     }
-    printf("[%s] done, queue closed\n", task);
-    return NULL;
+}
+
+void *sender_func(void *arg)
+{
+    thread_arg_t *ta = (thread_arg_t *)arg;
+    tsq_t *q_send = ta->q_send;
+    char *task = ta->task;
+    int sockfd = ta->socket;
+    int client_sockfd;
+    char msg[] = "Hello, world!\r\n";
+    while (1)
+    {
+        tsq_dequeue(q_send, &client_sockfd);
+        if (send(client_sockfd, msg, strlen(msg), 0) == -1)
+        {
+            perror("send");
+            close(client_sockfd);
+        }
+        printf("[%s] message sent to client %i\n", task, client_sockfd);
+    }
 }

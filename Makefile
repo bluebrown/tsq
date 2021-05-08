@@ -1,8 +1,8 @@
 #!/usr/bin/make -f
 
 build_dir = build
-extra = -fno-stack-protector
-#extra = ''
+#extra = -fno-stack-protector
+extra = 
 
 main: build_dir main.o tsq.o
 	gcc -pthread $(build_dir)/main.o $(build_dir)/tsq.o -o $(build_dir)/main $(extra)

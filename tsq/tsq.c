@@ -7,7 +7,7 @@ void init_tsq(tsq_t *tsq)
 
     tsq->ready = c;
     tsq->mutex = m;
-    tsq->sig_stop = 0;
+    tsq->sig_close = 0;
 
     tsq->fifo = malloc(sizeof(fifo_t));
     tsq->fifo->head = NULL;
@@ -16,7 +16,7 @@ void init_tsq(tsq_t *tsq)
 
 int write_to_fifo(tsq_t *tsq, FIFO_TYPE value)
 {
-    if (tsq->sig_stop)
+    if (tsq->sig_close)
         // cannot write to closed fifo
         return -1;
     node_t *new_node = malloc(sizeof(node_t));
@@ -45,7 +45,7 @@ int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result)
 {
     node_t *shifted;
     pthread_mutex_lock(&tsq->mutex);
-    while (tsq->fifo->head == NULL && tsq->sig_stop != 1)
+    while (tsq->fifo->head == NULL && tsq->sig_close != 1)
         pthread_cond_wait(&tsq->ready, &tsq->mutex);
     if (tsq->fifo->head == NULL)
     {
@@ -67,7 +67,7 @@ int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result)
 void close_fifo(tsq_t *tsq)
 {
     pthread_mutex_lock(&tsq->mutex);
-    tsq->sig_stop = 1;
+    tsq->sig_close = 1;
     pthread_cond_signal(&tsq->ready);
     pthread_mutex_unlock(&tsq->mutex);
 }

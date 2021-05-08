@@ -20,7 +20,7 @@ typedef struct tsq
 {
     pthread_cond_t ready;
     pthread_mutex_t mutex;
-    int sig_stop;
+    int sig_close;
     fifo_t *fifo;
 } tsq_t;
 

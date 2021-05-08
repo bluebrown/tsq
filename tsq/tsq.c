@@ -43,7 +43,7 @@ int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result)
     pthread_mutex_lock(&tsq->mutex);
     while (tsq->fifo->head == NULL && tsq->sig_stop != 1)
         pthread_cond_wait(&tsq->ready, &tsq->mutex);
-    if (tsq->sig_stop == 1)
+    if (tsq->fifo->head == NULL)
     {
         pthread_cond_signal(&tsq->ready);
         pthread_mutex_unlock(&tsq->mutex);
@@ -59,17 +59,10 @@ int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result)
     return 0;
 }
 
-void cancel_fifo(tsq_t *tsq)
+void close_fifo(tsq_t *tsq)
 {
     pthread_mutex_lock(&tsq->mutex);
     tsq->sig_stop = 1;
-    node_t *node = tsq->fifo->head;
-    while (node != NULL)
-    {
-        tsq->fifo->head = tsq->fifo->head->nxt;
-        free(node);
-    }
-    tsq->fifo->tail = NULL;
     pthread_cond_signal(&tsq->ready);
     pthread_mutex_unlock(&tsq->mutex);
 }

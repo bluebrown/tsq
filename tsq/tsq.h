@@ -27,4 +27,4 @@ typedef struct tsq
 void init_tsq(tsq_t *tsq);
 int write_to_fifo(tsq_t *tsq, FIFO_TYPE value);
 int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result);
-void cancel_fifo(tsq_t *tsq);
+void close_fifo(tsq_t *tsq);

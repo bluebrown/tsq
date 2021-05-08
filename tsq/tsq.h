@@ -2,29 +2,29 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define FIFO_TYPE int
+#define QUEUE_TYPE int
 
 typedef struct node
 {
-    FIFO_TYPE val;
+    QUEUE_TYPE val;
     struct node *nxt;
 } node_t;
 
-typedef struct fifo
+typedef struct queue
 {
     node_t *head;
     node_t *tail;
-} fifo_t;
+} queue_t;
 
 typedef struct tsq
 {
     pthread_cond_t ready;
     pthread_mutex_t mutex;
     int sig_close;
-    fifo_t *fifo;
+    queue_t *queue;
 } tsq_t;
 
-void init_tsq(tsq_t *tsq);
-int write_to_fifo(tsq_t *tsq, FIFO_TYPE value);
-int read_from_fifo(tsq_t *tsq, FIFO_TYPE *result);
-void close_fifo(tsq_t *tsq);
+void tsq_init_struct(tsq_t *tsq);
+int tsq_enqueue(tsq_t *tsq, QUEUE_TYPE value);
+int tsq_dequeue(tsq_t *tsq, QUEUE_TYPE *result);
+void tsq_close(tsq_t *tsq);

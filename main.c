@@ -13,7 +13,7 @@ typedef struct thread_arg
 int main(int argc, char const *argv[])
 {
     tsq_t tsq;
-    init_tsq(&tsq);
+    tsq_init_struct(&tsq);
 
     pthread_t consumer1, consumer2, consumer3, producer1, producer2;
 
@@ -27,8 +27,8 @@ int main(int argc, char const *argv[])
     pthread_join(producer2, NULL);
     printf("producer threads returned\n");
 
-    printf("close fifo\n");
-    close_fifo(&tsq);
+    printf("close queue\n");
+    tsq_close(&tsq);
 
     pthread_join(consumer1, NULL);
     pthread_join(consumer2, NULL);
@@ -47,8 +47,8 @@ void *produce(void *arg)
     printf("[%s] start\n", task);
     for (int i = 1; i < 4; i++)
     {
-        // returns -1 on error or closed fifo
-        if (write_to_fifo(tsq, i) == -1)
+        // returns -1 on error or closed queue
+        if (tsq_enqueue(tsq, i) == -1)
             return NULL;
     }
     printf("[%s] done\n", task);
@@ -64,12 +64,12 @@ void *consume(void *arg)
     printf("[%s] start\n", task);
     while (ok != -1)
     {
-        // returns -1 if fifo is closed and
+        // returns -1 if queue is closed and
         // no values more to read
-        ok = read_from_fifo(tsq, &result);
+        ok = tsq_dequeue(tsq, &result);
         sleep(2);
         printf("[%s] value received: %i\n", task, result);
     }
-    printf("[%s] done, fifo closed\n", task);
+    printf("[%s] done, queue closed\n", task);
     return NULL;
 }

@@ -2,7 +2,13 @@
 #include <unistd.h>
 #include <pthread.h>
 
-#define QUEUE_TYPE int
+typedef struct p_context
+{
+    int *sockfd;
+    char *received;
+} p_context_t;
+
+#define QUEUE_TYPE p_context_t
 
 typedef struct node
 {

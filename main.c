@@ -45,11 +45,13 @@ int main(int argc, char const *argv[])
     pthread_create(&receiver, NULL, receiver_func, &(thread_arg_t){&q_recv, &q_send, sockfd, server, "receiver"});
     pthread_create(&sender, NULL, sender_func, &(thread_arg_t){&q_recv, &q_send, sockfd, server, "sender"});
 
+    
     pthread_join(listener, NULL);
 
     return 0;
 }
 
+// accept incomming connection and enqueue to reciever queue
 void *listener_func(void *arg)
 {
     thread_arg_t *ta = (thread_arg_t *)arg;
@@ -82,10 +84,12 @@ void *listener_func(void *arg)
             continue;
         }
         printf("new socket connected: %i\n", new_fd);
-        tsq_enqueue(q_recv, new_fd);
+        tsq_enqueue(q_recv, (p_context_t){&new_fd, ""});
     }
 }
 
+// receive socket and read until connection is closed
+// dispatch message on end sequence
 void *receiver_func(void *arg)
 {
     thread_arg_t *ta = (thread_arg_t *)arg;
@@ -99,18 +103,19 @@ void *receiver_func(void *arg)
     char *pBuf;
     int bytesLeft;
     int msg_end;
+    p_context_t context;
 
     while (1)
     {
-        tsq_dequeue(q_recv, &client_sockfd);
+        tsq_dequeue(q_recv, &context);
+        client_sockfd = *context.sockfd;
         printf("[%s] reading from client %i\n", task, client_sockfd);
         memset(buffer, 0, sizeof(buffer));
 
         pBuf = buffer;
         bytesLeft = sizeof(buffer) - sizeof(char);
-        msg_end = 0;
 
-        while (bytesLeft > 0 && msg_end != 1)
+        while (bytesLeft > 0)
         {
             int bytes_read = read(client_sockfd, pBuf, bytesLeft);
             if (bytes_read == 0)
@@ -124,16 +129,20 @@ void *receiver_func(void *arg)
                 break;
             }
             bytesLeft -= bytes_read;
+
+            // if its stop sequence, enqueue the fd and the read bytes
+            // to the sender thread
             if (strstr(pBuf, "\r") != NULL)
             {
                 printf("[%s] end of head\n%s", task, pBuf);
-                // msg_end = 1;
-                tsq_enqueue(q_send, client_sockfd);
+                char rcv[sizeof(buffer)];
+                memset(rcv, '\0', pageSize - bytesLeft);
+                strcpy(rcv, buffer);
+                tsq_enqueue(q_send, (p_context_t){&client_sockfd, rcv});
                 memset(buffer, 0, sizeof(buffer));
             }
         }
-        if (msg_end == 1)
-            tsq_enqueue(q_send, client_sockfd);
+        close(client_sockfd);
     }
 }
 
@@ -144,15 +153,23 @@ void *sender_func(void *arg)
     char *task = ta->task;
     int sockfd = ta->socket;
     int client_sockfd;
-    char msg[] = "Hello, world!\r\n";
+    p_context_t context;
     while (1)
     {
-        tsq_dequeue(q_send, &client_sockfd);
-        if (send(client_sockfd, msg, strlen(msg), 0) == -1)
+        tsq_dequeue(q_send, &context);
+        client_sockfd = *context.sockfd;
+        if (strstr(context.received, "exit\r") != NULL)
+        {
+            printf("close client socket");
+            close(client_sockfd);
+            continue;
+        }
+        if (send(client_sockfd, context.received, strlen(context.received), 0) == -1)
         {
             perror("send");
             close(client_sockfd);
+            continue;
         }
-        printf("[%s] message sent to client %i\n", task, client_sockfd);
+        printf("[%s] message (%s) sent to client %i\n", task, context.received, client_sockfd);
     }
 }

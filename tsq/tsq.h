@@ -2,13 +2,7 @@
 #include <unistd.h>
 #include <pthread.h>
 
-typedef struct p_context
-{
-    int *sockfd;
-    char *received;
-} p_context_t;
-
-#define QUEUE_TYPE p_context_t
+#define QUEUE_TYPE void *
 
 typedef struct node
 {
@@ -20,6 +14,10 @@ typedef struct queue
 {
     node_t *head;
     node_t *tail;
+    int memsize;
+    int nodesize;
+    int varsize;
+
 } queue_t;
 
 typedef struct tsq
@@ -30,7 +28,7 @@ typedef struct tsq
     queue_t *queue;
 } tsq_t;
 
-void tsq_init_struct(tsq_t *tsq);
+void tsq_init_struct(tsq_t *tsq, int varsize);
 int tsq_enqueue(tsq_t *tsq, QUEUE_TYPE value);
-int tsq_dequeue(tsq_t *tsq, QUEUE_TYPE *result);
+int tsq_dequeue(tsq_t *tsq, QUEUE_TYPE result);
 void tsq_close(tsq_t *tsq);

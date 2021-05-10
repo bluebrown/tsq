@@ -1,6 +1,7 @@
 #include "tsq.h"
+#include <string.h>
 
-void tsq_init_struct(tsq_t *tsq)
+void tsq_init_struct(tsq_t *tsq, int varsize)
 {
     pthread_cond_t c = PTHREAD_COND_INITIALIZER;
     pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
@@ -12,6 +13,9 @@ void tsq_init_struct(tsq_t *tsq)
     tsq->queue = malloc(sizeof(queue_t));
     tsq->queue->head = NULL;
     tsq->queue->tail = NULL;
+    tsq->queue->memsize = sizeof(queue_t);
+    tsq->queue->nodesize = sizeof(node_t);
+    tsq->queue->varsize = varsize;
 }
 
 int tsq_enqueue(tsq_t *tsq, QUEUE_TYPE value)
@@ -19,7 +23,7 @@ int tsq_enqueue(tsq_t *tsq, QUEUE_TYPE value)
     if (tsq->sig_close)
         // cannot write to closed queue
         return -1;
-    node_t *new_node = malloc(sizeof(node_t));
+    node_t *new_node = malloc(tsq->queue->nodesize);
     if (new_node == NULL)
         // cannot allocate more memory
         return -1;
@@ -41,7 +45,7 @@ int tsq_enqueue(tsq_t *tsq, QUEUE_TYPE value)
     return 0;
 }
 
-int tsq_dequeue(tsq_t *tsq, QUEUE_TYPE *result)
+int tsq_dequeue(tsq_t *tsq, QUEUE_TYPE result)
 {
     node_t *shifted;
     pthread_mutex_lock(&tsq->mutex);
@@ -59,7 +63,7 @@ int tsq_dequeue(tsq_t *tsq, QUEUE_TYPE *result)
     if (tsq->queue->head == NULL)
         tsq->queue->tail = NULL;
     pthread_mutex_unlock(&tsq->mutex);
-    *result = shifted->val;
+    memcpy(result, shifted->val, tsq->queue->varsize);
     free(shifted);
     return 0;
 }
